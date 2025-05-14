@@ -51,28 +51,6 @@ class BlastComponent:
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
-        # 分析历史记录，找出已经查询过的参数
-        previous_databases = []
-        previous_programs = []
-        previous_sequence = None
-        
-        for msg in agent_history:
-            if isinstance(msg, AIMessage) and msg.additional_kwargs.get("type") in ["blast_progress", "blast_response"]:
-                db_match = re.search(r'DATABASE=(\w+)', msg.content)
-                if db_match:
-                    previous_databases.append(db_match.group(1))
-                
-                prog_match = re.search(r'PROGRAM=(\w+)', msg.content)
-                if prog_match:
-                    previous_programs.append(prog_match.group(1))
-                
-                seq_match = re.search(r'QUERY=([A-Za-z]+)', msg.content)
-                if seq_match:
-                    previous_sequence = seq_match.group(1)
-        
-        # 获取已经尝试过的循环次数，用于判断是否需要切换策略
-        eval_count = metadata.get("eval_count", 0)
-        
         # 构建单一提示
         combined_prompt = f"""
 
@@ -82,18 +60,6 @@ Only return the API URL in this format: [https://blast.ncbi.nlm.nih.gov/blast/Bl
 
 BLAST maps a specific DNA {{sequence}} to its chromosome location among different species.
 You need to extract the DNA sequence from the user's question.
-
-IMPORTANT ADAPTATION GUIDELINES:
-- I notice this is attempt #{eval_count + 1} for this question
-- Previous BLAST parameters:
-  - Database(s): {", ".join(previous_databases) if previous_databases else "None yet"}
-  - Program(s): {", ".join(previous_programs) if previous_programs else "None yet"}
-  - Sequence: {previous_sequence if previous_sequence else "None identified"}
-- If previous BLAST queries did not yield satisfactory results, consider:
-  1. Switching the database (e.g., nt → refseq_rna → refseq_genomic)
-  2. Changing the program (e.g., blastn → tblastn → blastp) if appropriate
-  3. Adjusting HITLIST_SIZE (5 → 10 → 20) to get more results
-  4. Making sure we're using the correct DNA sequence from the question
 
 If there were previous BLAST operations, review them to understand if a new query is needed or if we should work with existing results.
 
@@ -111,8 +77,8 @@ PREVIOUS BLAST HISTORY:
 {history_text if history_text else "No previous BLAST history."}
 --------------------------------
 
-${f"IMPORTANT: You've already tried databases: {', '.join(previous_databases)}, programs: {', '.join(previous_programs)}. Consider trying different parameters." if previous_databases else ""}
-IMPORTANT: only return the BLAST API URL, put it in the [], no other text.
+Extract the IDs from the previous esearch result and include them in the id parameter.
+IMPORTANT: only return the BLAST API URL,put it in the [], no other text.
 """
         
         # 使用单一SystemMessage

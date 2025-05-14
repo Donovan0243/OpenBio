@@ -52,17 +52,6 @@ class EutilsComponent:
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
-        # 分析历史记录，找出已经查询过的数据库
-        used_databases = []
-        for msg in agent_history:
-            if isinstance(msg, AIMessage) and msg.additional_kwargs.get("type") in ["eutils_progress", "eutils_response"]:
-                db_match = re.search(r'db=(\w+)', msg.content)
-                if db_match:
-                    used_databases.append(db_match.group(1))
-        
-        # 获取已经尝试过的循环次数，用于判断是否需要切换策略
-        eval_count = metadata.get("eval_count", 0)
-        
         # 构建单一提示
         combined_prompt = f"""
 
@@ -74,12 +63,6 @@ DATABASE SELECTION RULES:
 3. For SNP (rs) IDs or questions about genetic variants: use db=snp
 4. For genetic disorders, diseases, or phenotypes: use db=omim
 
-IMPORTANT ADAPTATION GUIDELINES:
-- I notice this is attempt #{eval_count + 1} for this question
-- Previously tried databases: {", ".join(used_databases) if used_databases else "None yet"}
-- If you see the same query has been attempted before with a certain database but did not yield satisfactory results, TRY A DIFFERENT DATABASE that might be more appropriate
-- Consider if we need broader or more specific search terms
-- If all appropriate databases have been tried, consider suggesting more refined search terms
 
 Here are some examples:
 Question: What is the official gene symbol of LMP10?
@@ -110,7 +93,6 @@ PREVIOUS RESULTS:
 --------------------------------
 
 Extract relevant search terms from the user's question.
-${f"IMPORTANT: You've already tried databases: {', '.join(used_databases)}. Consider trying a different database or refining the search terms." if used_databases else ""}
 IMPORTANT: only return the API URL,put it in the [], no other text.
 """
         
