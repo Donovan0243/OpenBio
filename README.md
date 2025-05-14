@@ -4,46 +4,46 @@
  * @LastEditors: Haodong Chen chd243013@gmail.com
  * @LastEditTime: 2025-05-07 23:38:15
  * @FilePath: /OpenBioLLM-RAG/openbio_rag/README.md
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ * @Description: This is the default setting, please set `customMade`, open koroFileHeader for configuration: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
 # OpenBio RAG
 
-一个基于 LangChain 的 Agentic RAG 系统，用于生物信息学领域的智能问答。
+An Agentic RAG system based on LangChain for intelligent Q&A in the field of bioinformatics.
 
-## 功能特点
+## Features
 
-- 多 Agent 协作的智能问答系统
-- 基于 LangChain 和 LangGraph 的工作流
-- 支持网络搜索和知识库检索
-- 灵活的决策和评估机制
+- Multi-Agent collaborative intelligent Q&A system
+- Workflow based on LangChain and LangGraph
+- Support for web search and knowledge base retrieval
+- Flexible decision-making and evaluation mechanisms
 
-## 安装
+## Installation
 
 ```bash
-# 克隆项目
+# Clone the project
 git clone [your-repo-url]
 cd openbio_rag
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 
-# 配置环境变量
+# Configure environment variables
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API keys
+# Edit the .env file and fill in your API keys
 ```
 
-## 使用方法
+## Usage
 
 ```python
 from src.graph.workflow import RAGWorkflow
 
-# 创建工作流
+# Create workflow
 workflow = RAGWorkflow()
 app = workflow.create_graph()
 
-# 运行查询
+# Run query
 result = app.invoke({
-    "messages": ["你的问题"],
+    "messages": ["Your question"],
     "next_step": "decide",
     "action_history": [],
     "current_result": "",
@@ -51,26 +51,26 @@ result = app.invoke({
 })
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 openbio_rag/
 ├── notebooks/          # Jupyter notebooks
-├── src/               # 源代码
-│   ├── agents/        # Agent 实现
-│   ├── types/         # 类型定义
-│   ├── tools/         # 工具集合
-│   ├── prompts/       # 提示词模板
-│   └── graph/         # 工作流定义
-├── tests/             # 测试
-└── config/            # 配置文件
+├── src/                # Source code
+│   ├── agents/         # Agent implementations
+│   ├── types/          # Type definitions
+│   ├── tools/          # Tool collections
+│   ├── prompts/        # Prompt templates
+│   └── graph/          # Workflow definitions
+├── tests/              # Tests
+└── config/             # Configuration files
 ```
 
-## 开发
+## Development
 
-1. 创建虚拟环境
-2. 安装开发依赖
-3. 运行测试
+1. Create virtual environment
+2. Install development dependencies
+3. Run tests
 
 ## License
 
