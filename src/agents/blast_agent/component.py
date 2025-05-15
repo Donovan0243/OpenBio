@@ -2,7 +2,7 @@ import re
 import logging
 import time
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_ollama import ChatOllama
 from ...tools.call_api import call_api
@@ -13,17 +13,31 @@ logger = logging.getLogger(__name__)
 class BlastComponent:
     def __init__(self):
         self.llm = ChatOllama(
-            model="qwen2.5:32b",
+            model="qwen2.5:14b",
             base_url="http://34.142.153.30:11434",
             api_key="ollama",
             temperature=0
         )
     
+    def is_duplicate_params(self, new_params: Dict[str, Any], used_params: List[Dict[str, Any]]) -> bool:
+        """
+        检查BLAST参数是否重复
+        只检查sequence是否重复，hitlist_size可以不同
+        """
+        for old_params in used_params:
+            # 只检查sequence是否相同
+            if new_params.get('sequence') == old_params.get('sequence'):
+                return True
+        return False
+
     def init_blast_query(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """第一步：初始化BLAST查询，生成PUT请求"""
         # 确保保留metadata
         metadata = state.get("metadata", {})
         messages = state["messages"]
+        
+        # 获取历史参数记录
+        used_params = metadata.get("used_blast_params", [])
         
         # 获取所有用户消息
         user_question = [msg for msg in messages if isinstance(msg, HumanMessage) and msg.additional_kwargs.get("type") == "user_question"]
@@ -52,14 +66,17 @@ class BlastComponent:
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
+        # 格式化已使用过的参数
+        used_params_text = ""
+        if used_params:
+            used_params_text = "\nPreviously used sequences(for reference):\n"
+            for i, params in enumerate(used_params, 1):
+                used_params_text += f"{i}. {params['sequence'][:50]}...\n"
+        
         # 构建单一提示
         combined_prompt = f"""
 
-You are a parameter extractor for NCBI BLAST API. Extract the DNA sequence from the user's question and determine an appropriate number of results to return.
-
-BLAST maps a specific DNA sequence to its chromosome location among different species.
-You need to extract the DNA sequence from the user's question.
-
+You are a parameter extractor for NCBI BLAST API. You need to extract the DNA sequence from the user's question.
 If there were previous BLAST operations, review them to understand if a new query is needed or if we should work with existing results.
 
 Here is an example:
@@ -73,9 +90,14 @@ USER QUESTION:
 PREVIOUS HISTORY:
 {history_text if history_text else "No previous interaction history."}
 --------------------------------
+PREVIOUS USED SEQUENCES (for reference):
+{used_params_text if used_params_text else "No previous used sequences."}
+--------------------------------
 
 Extract relevant search terms from the user's question and the previous history.
-IMPORTANT: only return the JSON object, nothing else.
+IMPORTANT: 
+1. Only return a JSON object with these keys DIRECTLY, do NOT include any other text or comments.
+2. Try to use a different sequence if the desired sequence has already been used, but accuracy is more important than uniqueness.
 """
         
         # 使用单一SystemMessage
@@ -84,12 +106,10 @@ IMPORTANT: only return the JSON object, nothing else.
         try:
             response = self.llm.invoke(blast_prompt)
             
-            # 解析响应
+            # 解析JSON响应
             try:
-                # 尝试直接解析整个响应
                 params = json.loads(response.content)
             except json.JSONDecodeError:
-                # 如果失败，尝试使用正则表达式提取JSON部分
                 json_match = re.search(r'({.*?})', response.content.replace('\n', ''))
                 if not json_match:
                     logger.error(f"无法从LLM响应中提取有效的JSON: {response}")
@@ -103,6 +123,18 @@ IMPORTANT: only return the JSON object, nothing else.
                     }
                 params = json.loads(json_match.group(1))
 
+            # 使用重复检查方法
+            if self.is_duplicate_params(params, used_params):
+                logger.warning(f"检测到重复的序列: {params['sequence'][:50]}...")
+                return {
+                    "messages": messages + [
+                        AIMessage(content="This sequence has been used before. Please try with a different sequence or rephrase your question to use a new sequence.",
+                                additional_kwargs={"type": "blast_error"})
+                    ],
+                    "status": "error",
+                    "metadata": metadata
+                }
+
             # 验证必要的参数是否存在
             if "sequence" not in params:
                 logger.error(f"缺少必要的序列参数: {params}")
@@ -115,13 +147,9 @@ IMPORTANT: only return the JSON object, nothing else.
                     "metadata": metadata
                 }
 
-            # 构建BLAST URL - 使用固定的blastn和nt数据库
+            # 构建BLAST URL
             url = "https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Put&PROGRAM=blastn&MEGABLAST=on&DATABASE=nt&FORMAT_TYPE=XML"
-
-            # 添加序列参数
             url += f"&QUERY={params['sequence']}"
-
-            # 添加hitlist_size(如有提供)
             if "hitlist_size" in params:
                 url += f"&HITLIST_SIZE={params['hitlist_size']}"
             else:
@@ -156,19 +184,26 @@ IMPORTANT: only return the JSON object, nothing else.
                 
             rid = rid_match.group(1)
             
-            # 记录PUT请求信息
+            # 记录使用过的参数
+            used_params.append(params)
+            
+            # 返回结果，更新metadata
             return {
                 "messages": messages + [
                     AIMessage(
                         content=f"Initiated BLAST query with: [{url}]\nReceived RID: {rid}",
-                        additional_kwargs={"type": "blast_progress"}
+                        additional_kwargs={
+                            "type": "blast_progress",
+                            "parameters": params  # 在消息中也保存参数，方便查看
+                        }
                     )
                 ],
-                "next": "fetch_results",  # 指向下一个处理步骤
+                "next": "fetch_results",
                 "metadata": {
                     **metadata,
-                    "blast_rid": rid,  # 保存RID以供后续使用
-                    "attempt": 0  # 初始化尝试次数
+                    "blast_rid": rid,
+                    "attempt": 0,
+                    "used_blast_params": used_params  # 更新使用过的参数列表
                 }
             }
             

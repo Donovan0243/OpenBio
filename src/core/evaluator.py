@@ -3,6 +3,8 @@ from langchain_core.messages import SystemMessage, AIMessage,HumanMessage
 import logging
 from typing import Dict, Any
 from textwrap import dedent
+import json
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -15,32 +17,6 @@ class Evaluator:
             num_ctx=16000,
             temperature=0
         )
-
-        self.prompt_template = """
-        You are a strict answer evaluator.
-        You should may a decision that whether the conversation history contain the answer.
-        - If the answer is currently existing in the conversation history, output GENERATE
-        - If the answer is not currently existing in the conversation history, output CONTINUE
-
-        Here is some examples:
-        Question: What is the official gene symbol of LMP10?
-        Current conversation history:
-        [https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&retmax=5&retmode=json&sort=relevance&term=LMP10]->
-        [b'{"header":{"type":"esearch","version":"0.3"},"esearchresult":{"count":"3","retmax":"3","retstart":"0","idlist":["5699","8138","19171"],"translationset":[],"translationstack":[{"term":"LMP10[All Fields]","field":"All Fields","count":"3","explode":"N"},"GROUP"],"querytranslation":"LMP10[All Fields]"}}\n']
-        Conclusion: CONTINUE
-        Reason: Just got the id, have not got the gene symbol of LMP10.
-
-        Question: What is the official gene symbol of LMP10?
-        Current conversation history:
-        [https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&retmax=5&retmode=json&sort=relevance&term=LMP10]->
-        [b'{"header":{"type":"esearch","version":"0.3"},"esearchresult":{"count":"3","retmax":"3","retstart":"0","idlist":["5699","8138","19171"],"translationset":[],"translationstack":[{"term":"LMP10[All Fields]","field":"All Fields","count":"3","explode":"N"},"GROUP"],"querytranslation":"LMP10[All Fields]"}}\n']
-        [https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=gene&retmax=5&retmode=json&sort=relevance&id=19171,5699,8138]->
-        [b'\n1. Psmb10\nOfficial Symbol: Psmb10 and Name: proteasome (prosome, macropain) subunit, beta type 10 [Mus musculus (house mouse)]\nOther Aliases: Mecl-1, Mecl1\nOther Designations: proteasome subunit beta type-10; low molecular mass protein 10; macropain subunit MECl-1; multicatalytic endopeptidase complex subunit MECl-1; prosome Mecl1; proteasome (prosomome, macropain) subunit, beta type 10; proteasome MECl-1; proteasome subunit MECL1; proteasome subunit beta-2i\nChromosome: 8; Location: 8 53.06 cM\nAnnotation: Chromosome 8 NC_000074.7 (106662360..106665024, complement)\nID: 19171\n\n2. PSMB10\nOfficial Symbol: PSMB10 and Name: proteasome 20S subunit beta 10 [Homo sapiens (human)]\nOther Aliases: IMD121, LMP10, MECL1, PRAAS5, beta2i\nOther Designations: proteasome subunit beta type-10; low molecular mass protein 10; macropain subunit MECl-1; multicatalytic endopeptidase complex subunit MECl-1; proteasome (prosome, macropain) subunit, beta type, 10; proteasome MECl-1; proteasome catalytic subunit 2i; proteasome subunit MECL1; proteasome subunit beta 10; proteasome subunit beta 7i; proteasome subunit beta-2i; proteasome subunit beta2i\nChromosome: 16; Location: 16q22.1\nAnnotation: Chromosome 16 NC_000016.10 (67934506..67936850, complement)\nMIM: 176847\nID: 5699\n\n3. MECL1\nProteosome subunit MECL1 [Homo sapiens (human)]\nOther Aliases: LMP10, PSMB10\nThis record was replaced with GeneID: 5699\nID: 8138\n\n']
-        Conclusion: GENERATE
-        Reason: Official gene symbol (Psmb10) is found in the efetch result.
-        
-        """
-
         self.prompt_template2 = """\
 You are a strict answer evaluator.
 You should may a decision that whether the conversation history can answer the question.
@@ -101,36 +77,92 @@ You should may a decision that whether the conversation history can answer the q
 
         eval_prompt = [
         SystemMessage(content=f"""\
-{self.prompt_template2}
+You are a strict answer evaluator.
+You should make a decision about whether the conversation history can answer the question.
+You need to return a JSON object with the following structure:
+{{
+    "next_step": "GENERATE" or "CONTINUE",
+    "reason": "Brief explanation of your decision"
+}}
+
+Examples:
+1. When information is sufficient:
+{{
+    "next_step": "GENERATE",
+    "reason": "Found the official gene symbol Psmb10 in the results"
+}}
+
+2. When information is insufficient:
+{{
+    "next_step": "CONTINUE",
+    "reason": "Only have gene IDs, need detailed gene information"
+}}
+
 --------------------------------
-User Question: {original_question}
+USER QUESTION: {original_question}
 --------------------------------
-Current conversation history:
+CONVERSATION HISTORY:
 {history_text if history_text else "No previous conversation history."}
 --------------------------------
-Please return your decision DIRECTLY: GENERATE or CONTINUE
-        """)
+Please return your decision as a JSON object.
+""")
         ]
         
-        response = self.llm.invoke(eval_prompt)
-        
-        logger.info(f"Evaluator决策: {response} (评估轮数: {eval_count}/5)")
-        
-        if "CONTINUE" in response.content:
-            logger.info("信息不足，返回router继续查询")
+        try:
+            response = self.llm.invoke(eval_prompt)
+            
+            # 解析JSON响应
+            try:
+                eval_result = json.loads(response.content)
+            except json.JSONDecodeError:
+                json_match = re.search(r'({.*?})', response.content.replace('\n', ''))
+                if not json_match:
+                    logger.error(f"无法从评估响应中提取有效的JSON: {response}")
+                    return {
+                        "next": "router",
+                        "metadata": {
+                            **state["metadata"],
+                            "eval_error": "Invalid JSON response from evaluator"
+                        }
+                    }
+                eval_result = json.loads(json_match.group(1))
+            
+            logger.info(f"Evaluator决策: {eval_result} (评估轮数: {eval_count}/5)")
+            
+            if eval_result["next_step"] == "CONTINUE":
+                logger.info(f"信息不足，返回router继续查询。原因: {eval_result['reason']}")
+                return {
+                    "next": "router",
+                    "metadata": {
+                        **state["metadata"],
+                        "eval_result": eval_result
+                    }
+                }
+            elif eval_result["next_step"] == "GENERATE":
+                logger.info(f"信息足够，进入生成阶段。原因: {eval_result['reason']}")
+                return {
+                    "next": "generate",
+                    "metadata": {
+                        **state["metadata"],
+                        "eval_result": eval_result
+                    }
+                }
+            else:
+                logger.info("输出不规范，返回router继续查询")
+                return {
+                    "next": "router",
+                    "metadata": {
+                        **state["metadata"],
+                        "eval_error": "Invalid decision from evaluator"
+                    }
+                }
+            
+        except Exception as e:
+            logger.error(f"评估过程中出错: {str(e)}")
             return {
                 "next": "router",
-                "metadata": state["metadata"]
-            }
-        elif "GENERATE" in response.content:
-            logger.info("信息足够，进入生成阶段")
-            return {
-                "next": "generate",
-                "metadata": state["metadata"]
-            }
-        else:
-            logger.info("输出不规范，返回router继续查询")
-            return {
-                "next": "router",
-                "metadata": state["metadata"]
+                "metadata": {
+                    **state["metadata"],
+                    "eval_error": f"Evaluation error: {str(e)}"
+                }
             }

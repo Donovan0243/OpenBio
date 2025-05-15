@@ -12,16 +12,50 @@ logger = logging.getLogger(__name__)
 class EutilsComponent:
     def __init__(self):
         self.llm = ChatOllama(
-            model="qwen2.5:32b",
+            model="qwen2.5:14b",
             base_url="http://34.142.153.30:11434",
             temperature=0,
             num_ctx=16000
         )
     
+    def is_duplicate_params(self, new_params: Dict[str, Any], used_params: List[Dict[str, Any]]) -> bool:
+        """
+        检查参数是否重复
+        规则：
+        1. esearch阶段：检查db和term是否与之前任何一轮都相同
+        2. efetch阶段：检查db和id是否与之前任何一轮都相同
+        3. 两个阶段互不干扰
+        """
+        # 判断当前是哪个阶段
+        is_esearch = 'term' in new_params
+        is_efetch = 'id' in new_params
+        
+        for old_params in used_params:
+            # 检查数据库是否相同
+            if new_params.get('db') != old_params.get('db'):
+                continue
+            
+            # esearch阶段：检查term
+            if is_esearch and 'term' in old_params:
+                if new_params['term'] == old_params['term']:
+                    return True
+                
+            # efetch阶段：检查id
+            if is_efetch and 'id' in old_params:
+                new_ids = set(new_params['id'].split(','))
+                old_ids = set(old_params['id'].split(','))
+                if new_ids == old_ids:
+                    return True
+        
+        return False
+
     def init_search(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """第一步：初始化搜索，使用esearch API"""
         metadata = state.get("metadata", {})
         messages = state["messages"]
+        
+        # 获取历史参数记录
+        used_params = metadata.get("used_eutils_params", [])
         
         # 获取用户问题
         user_question = [msg for msg in messages if isinstance(msg, HumanMessage) and msg.additional_kwargs.get("type") == "user_question"]
@@ -53,17 +87,21 @@ class EutilsComponent:
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
+        # 格式化已使用过的参数为JSON格式
+        used_params_text = ""
+        if used_params:
+            used_params_text = "\nPreviously used parameters:\n"
+            for i, params in enumerate(used_params, 1):
+                used_params_text += f"{json.dumps(params, indent=2)}\n"
+        
         # 构建单一提示
         combined_prompt = f"""
-
 You are a parameter generator for NCBI E-utilities API. Generate the parameters needed for an initial esearch request to the NCBI E-utilities API.
 
 DATABASE SELECTION RULES:
 1. For gene names, symbols, aliases, or questions about gene function: use db=gene
-2. For DNA sequences: DNA sequences should NOT be directly searched in E-utils! They require BLAST first.
-3. For SNP (rs) IDs or questions about genetic variants: use db=snp
-4. For genetic disorders, diseases, or phenotypes: use db=omim
-
+2. For SNP (rs) IDs or questions about genetic variants: use db=snp
+3. For genetic disorders, diseases, or phenotypes: use db=omim
 
 Here are some examples:
 Question: What is the official gene symbol of LMP10?
@@ -75,17 +113,6 @@ Output: {{"db": "snp", "term": "rs1217074595", "retmax": 10}}
 Question: What are genes related to Meesmann corneal dystrophy?
 Output: {{"db": "omim", "term": "Meesmann corneal dystrophy", "retmax": 20}}
 
-
-IMPORTANT GUIDELINES:
-- If the question involves a DNA sequence, DO NOT use the sequence as a search term in E-utils
-- For questions asking about aliases of genes containing DNA sequences, you should WAIT until BLAST results identify the gene
-- Read the question carefully to determine what type of biological entity is being asked about
-
-Only return a JSON object with these keys:
-- db: The database to search (gene, snp, omim)
-- term: The search term
-- retmax: Number of results to return (recommend 5-20)
-
 --------------------------------
 USER QUESTION:
 {original_question}
@@ -93,9 +120,18 @@ USER QUESTION:
 PREVIOUS HISTORY:
 {history_text if history_text else "No previous interaction history."}
 --------------------------------
+PREVIOUS USED PARAMETERS:
+{used_params_text if used_params_text else "No previous used parameters."}
+--------------------------------
 
 Extract relevant search terms from the user's question and the previous history.
-IMPORTANT: only return the JSON object, nothing else.
+IMPORTANT: 
+1. First review the previous search history and parameters to understand what has been tried
+2. Try to use different combinations of parameters if the desired parameter has already been used:
+   - Use different search terms in the same database
+   - Try different databases for the same search term
+3. However, if the user's question clearly refers to specific parameters, prioritize accuracy over trying new combinations
+4. Only return a JSON object with these keys DIRECTLY, do NOT include any other text or comments.
 """
         
         # 使用单一SystemMessage
@@ -106,14 +142,24 @@ IMPORTANT: only return the JSON object, nothing else.
             
             # 解析JSON响应
             try:
-                # 尝试直接解析整个响应
                 params = json.loads(response.content)
             except json.JSONDecodeError:
-                # 如果失败，尝试使用正则表达式提取JSON部分
                 json_match = re.search(r'({.*?})', response.content.replace('\n', ''))
                 if not json_match:
                     raise ValueError("无法从LLM响应中提取有效的JSON")
                 params = json.loads(json_match.group(1))
+            
+            # 使用通用参数检查方法
+            if self.is_duplicate_params(params, used_params):
+                logger.warning(f"检测到重复的参数: {params}")
+                return {
+                    "messages": messages + [
+                        AIMessage(content="Duplicate parameters detected (same database and term), please try with different parameters or a different database",
+                                additional_kwargs={"type": "eutils_error"})
+                    ],
+                    "status": "error",
+                    "metadata": metadata
+                }
             
             # 验证必要的参数是否存在
             if not all(key in params for key in ["db", "term"]):
@@ -150,7 +196,10 @@ IMPORTANT: only return the JSON object, nothing else.
             if len(api_response) > 10000:
                 api_response = api_response[:10000] + "... [result is truncated]"
             
-            # 保存esearch结果并进入下一步
+            # 记录使用过的参数
+            used_params.append(params)
+            
+            # 返回结果，更新metadata
             return {
                 "messages": messages + [
                     AIMessage(
@@ -158,8 +207,11 @@ IMPORTANT: only return the JSON object, nothing else.
                         additional_kwargs={"type": "eutils_progress", "parameters": params}
                     )
                 ],
-                "next": "fetch_details",  # 指向下一步
-                "metadata": metadata
+                "next": "fetch_details",
+                "metadata": {
+                    **metadata,
+                    "used_eutils_params": used_params  # 更新使用过的参数列表
+                }
             }
             
         except Exception as e:
@@ -174,6 +226,9 @@ IMPORTANT: only return the JSON object, nothing else.
         """第二步：获取详细信息，使用efetch或esummary API"""
         metadata = state.get("metadata", {})
         messages = state["messages"]
+        
+        # 获取历史参数记录
+        used_params = metadata.get("used_eutils_params", [])
         
         # 所有历史消息
         eutils_responses = [
@@ -201,14 +256,16 @@ IMPORTANT: only return the JSON object, nothing else.
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
+        # 格式化已使用过的参数为JSON格式
+        used_params_text = ""
+        if used_params:
+            used_params_text = "\nPreviously used parameters:\n"
+            for i, params in enumerate(used_params, 1):
+                used_params_text += f"{json.dumps(params, indent=2)}\n"
+        
         # 构建单一提示
         combined_prompt = f"""
 You are a parameter generator for NCBI E-utilities API. Based on the previous esearch results shown above, generate the parameters needed for an efetch or esummary request.
-
-Extract the database IDs from the previous esearch results and use them for the next API call.
-- Generally prefer esummary for better formatted data
-- Use the same database (gene, snp, omim) as in the previous esearch call
-- Include all relevant IDs found in the esearch results
 
 Here are some examples:
 Previous result contains IDs from gene database:
@@ -220,11 +277,6 @@ Output: {{"method": "esummary", "db": "snp", "id": "1217074595"}}
 Previous result contains IDs from omim database:
 Output: {{"method": "esummary", "db": "omim", "id": "618767,601687,300778,148043,122100"}}
 
-Only return a JSON object with these keys:
-- method: Either "efetch" or "esummary" (prefer esummary when possible)
-- db: The database to query (gene, snp, omim)
-- id: Comma-separated list of IDs from the esearch results
-
 --------------------------------
 USER QUESTION:
 {original_question}
@@ -232,9 +284,17 @@ USER QUESTION:
 PREVIOUS HISTORY:
 {history_text if history_text else "No previous interaction history."}
 --------------------------------
+PREVIOUS USED PARAMETERS:
+{used_params_text}
+--------------------------------
 
 Extract the IDs from the previous esearch result and include them in your JSON.
-IMPORTANT: only return the JSON object, nothing else.
+IMPORTANT: 
+1. First review the previous search history and parameters to understand what has been tried
+2. Try to use different combinations of parameters if the desired parameter has already been used:
+   - Extract different IDs from the same esearch result
+3. However, if the user's question clearly refers to specific IDs, prioritize accuracy over trying new combinations
+4. Only return a JSON object with these keys DIRECTLY, do NOT include any other text or comments.
 """
         
         # 使用单一SystemMessage
@@ -245,14 +305,24 @@ IMPORTANT: only return the JSON object, nothing else.
             
             # 解析JSON响应
             try:
-                # 尝试直接解析整个响应
                 params = json.loads(response.content)
             except json.JSONDecodeError:
-                # 如果失败，尝试使用正则表达式提取JSON部分
                 json_match = re.search(r'({.*?})', response.content.replace('\n', ''))
                 if not json_match:
                     raise ValueError("无法从LLM响应中提取有效的JSON")
                 params = json.loads(json_match.group(1))
+            
+            # 使用通用参数检查方法
+            if self.is_duplicate_params(params, used_params):
+                logger.warning(f"检测到重复的参数: {params}")
+                return {
+                    "messages": messages + [
+                        AIMessage(content="Duplicate parameters detected (same database and IDs), please try with different parameters or a different database",
+                                additional_kwargs={"type": "eutils_error"})
+                    ],
+                    "status": "error",
+                    "metadata": metadata
+                }
             
             # 验证必要的参数是否存在
             if not all(key in params for key in ["method", "db", "id"]):
@@ -287,6 +357,9 @@ IMPORTANT: only return the JSON object, nothing else.
             if len(api_response) > 10000:
                 api_response = api_response[:10000] + "... [result is truncated]"
             
+            # 记录使用过的参数
+            used_params.append(params)
+            
             # 返回最终结果
             return {
                 "messages": messages + [
@@ -295,7 +368,10 @@ IMPORTANT: only return the JSON object, nothing else.
                         additional_kwargs={"type": "eutils_response", "parameters": params}
                     )
                 ],
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "used_eutils_params": used_params  # 需要更新metadata
+                }
             }
             
         except Exception as e:

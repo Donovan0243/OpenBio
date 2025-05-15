@@ -45,28 +45,39 @@ class Router:
             msg_type = msg.additional_kwargs.get("type", "unknown")
             history_text += f"\n--- {msg_type} ---\n{msg.content}\n"
         
+        # 获取evaluator的意见
+        eval_result = metadata.get("eval_result", {})
+        eval_reason = eval_result.get("reason", "No evaluation reason provided")
+        
         # 构建单一提示
         combined_prompt = f"""
-User Question: {original_question}
---------------------------------
-CONVERSATION HISTORY:
-{history_text if history_text else "No previous interaction history."}
---------------------------------
+
 You are a strict router that uses JSON to make routing decisions. You should analyze the conversation history above to make an informed decision about which agent to use.
 router options:
    - eutils_agent: query the database to get the detail information about gene, protein, disease.
    - blast_agent: check the DNA sequence alignment and comparison.
                                      
 You should consider the following:
+   - What is the question?
    - What information we have gathered so far?
-   - What is the next logical step in answering the question?
    - Which tool would be most appropriate for the next step?
-   - If the question is about giving the DNA sequence to get gene alias, we need to use blast_agent to get the gene symbol first and then use eutils_agent to get the gene alias.  
+   - The evaluator's opinion.
+
+--------------------------------
+USER QUESTION: 
+{original_question}
+--------------------------------
+CONVERSATION HISTORY:
+{history_text if history_text else "No previous interaction history."}
+--------------------------------
+PREVIOUS EVALUATOR'S OPINION:
+{eval_reason}
+--------------------------------
 
 You MUST output your decision in the following JSON format:
 {{
     "agent": "eutils_agent" or "blast_agent",
-    "reasoning": "Brief explanation of why this agent was chosen for the next step based on the conversation context"
+    "reason": "Brief explanation of why this agent was chosen for the next step"
 }}
                                      
 Do not include any other text or formatting. ONLY return the JSON object.
@@ -85,18 +96,18 @@ Do not include any other text or formatting. ONLY return the JSON object.
                 response_json = json.loads(response.content)
                 
                 # 验证JSON格式是否正确
-                if "agent" in response_json and "reasoning" in response_json:
+                if "agent" in response_json and "reason" in response_json:
                     agent = response_json["agent"]
-                    reasoning = response_json["reasoning"]
+                    reason = response_json["reason"]
                     
                     if agent in ["eutils_agent", "blast_agent"]:
                         # 记录路由决策和原因
-                        logger.info(f"路由决策: {agent}, 原因: {reasoning}")
+                        logger.info(f"路由决策: {agent}, 原因: {reason}")
                         return {
                             "next": agent,
                             "metadata": {
                                 **metadata,
-                                "routing_reason": reasoning
+                                "routing_reason": reason
                             }
                         }
                     else:
