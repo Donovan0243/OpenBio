@@ -1,6 +1,7 @@
 import re
 import logging
 import time
+import json
 from typing import Dict, Any
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_ollama import ChatOllama
@@ -54,31 +55,27 @@ class BlastComponent:
         # 构建单一提示
         combined_prompt = f"""
 
-You are a URL generator for NCBI BLAST API. Generate a PUT request URL for the NCBI BLAST API based on the user's question and any previous BLAST operations shown above.
+You are a parameter extractor for NCBI BLAST API. Extract the DNA sequence from the user's question and determine an appropriate number of results to return.
 
-Only return the API URL in this format: [https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Put&PROGRAM=blastn&MEGABLAST=on&DATABASE=nt&FORMAT_TYPE=XML&QUERY={{sequence}}&HITLIST_SIZE={{max_hit_size}}].
-
-BLAST maps a specific DNA {{sequence}} to its chromosome location among different species.
+BLAST maps a specific DNA sequence to its chromosome location among different species.
 You need to extract the DNA sequence from the user's question.
 
 If there were previous BLAST operations, review them to understand if a new query is needed or if we should work with existing results.
 
-Here are some examples:
-
-Question: Align the DNA sequence to the human genome:ATTCTGCCTTTAGTAATTTGATGACAGAGACTTCTTGGGAACCACAGCCAGGGAGCCACCCTTTACTCCACCAACAGGTGGCTTATATCCAATCTGAGAAAGAAAGAAAAAAAAAAAAGTATTTCTCT?
-[https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Put&PROGRAM=blastn&MEGABLAST=on&DATABASE=nt&FORMAT_TYPE=XML&QUERY=ATTCTGCCTTTAGTAATTTGATGACAGAGACTTCTTGGGAACCACAGCCAGGGAGCCACCCTTTACTCCACCAACAGGTGGCTTATATCCAATCTGAGAAAGAAAGAAAAAAAAAAAAGTATTTCTCT&HITLIST_SIZE=5]->[288UJ8NF013]
-[https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Get&FORMAT_TYPE=Text&RID=288UJ8NF013]->[......]
+Here is an example:
+Question: Align the DNA sequence to the human genome: ATTCTGCCTTTAGTAATTTGATGACAGAGACTTCTTGGGAACCACAGCCAGGGAGCCACCCTTTACTCCACCAACAGGTGGCTTATATCCAATCTGAGAAAGAAAGAAAAAAAAAAAAGTATTTCTCT?
+Output: {{"sequence": "ATTCTGCCTTTAGTAATTTGATGACAGAGACTTCTTGGGAACCACAGCCAGGGAGCCACCCTTTACTCCACCAACAGGTGGCTTATATCCAATCTGAGAAAGAAAGAAAAAAAAAAAAGTATTTCTCT","hitlist_size": 10}}
 
 --------------------------------
 USER QUESTION:
 {original_question}
 --------------------------------
-PREVIOUS BLAST HISTORY:
-{history_text if history_text else "No previous BLAST history."}
+PREVIOUS HISTORY:
+{history_text if history_text else "No previous interaction history."}
 --------------------------------
 
-Extract the IDs from the previous esearch result and include them in the id parameter.
-IMPORTANT: only return the BLAST API URL,put it in the [], no other text.
+Extract relevant search terms from the user's question and the previous history.
+IMPORTANT: only return the JSON object, nothing else.
 """
         
         # 使用单一SystemMessage
@@ -87,32 +84,50 @@ IMPORTANT: only return the BLAST API URL,put it in the [], no other text.
         try:
             response = self.llm.invoke(blast_prompt)
             
-            url_match = re.search(r'\[(https?://[^\[\]]+)\]', response.content)
-            
-            if not url_match:
-                logger.error(f"无法从LLM响应中提取URL: {response}")
+            # 解析响应
+            try:
+                # 尝试直接解析整个响应
+                params = json.loads(response.content)
+            except json.JSONDecodeError:
+                # 如果失败，尝试使用正则表达式提取JSON部分
+                json_match = re.search(r'({.*?})', response.content.replace('\n', ''))
+                if not json_match:
+                    logger.error(f"无法从LLM响应中提取有效的JSON: {response}")
+                    return {
+                        "messages": messages + [
+                            AIMessage(content="Cannot extract valid JSON from LLM response",
+                                    additional_kwargs={"type": "blast_error"})
+                        ],
+                        "status": "error",
+                        "metadata": metadata
+                    }
+                params = json.loads(json_match.group(1))
+
+            # 验证必要的参数是否存在
+            if "sequence" not in params:
+                logger.error(f"缺少必要的序列参数: {params}")
                 return {
                     "messages": messages + [
-                        AIMessage(content="Cannot generate valid BLAST API URL",
+                        AIMessage(content="Missing required sequence parameter",
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
                     "metadata": metadata
                 }
-            
-            url = url_match.group(1)
-            logger.info(f"生成的PUT请求URL: {url}")
-            
-            if 'CMD=Put' not in url:
-                logger.error(f"生成的URL不是PUT请求: {url}")
-                return {
-                    "messages": messages + [
-                        AIMessage(content="Generated URL is not a PUT request",
-                                additional_kwargs={"type": "blast_error"})
-                    ],
-                    "status": "error",
-                    "metadata": metadata
-                }
+
+            # 构建BLAST URL - 使用固定的blastn和nt数据库
+            url = "https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Put&PROGRAM=blastn&MEGABLAST=on&DATABASE=nt&FORMAT_TYPE=XML"
+
+            # 添加序列参数
+            url += f"&QUERY={params['sequence']}"
+
+            # 添加hitlist_size(如有提供)
+            if "hitlist_size" in params:
+                url += f"&HITLIST_SIZE={params['hitlist_size']}"
+            else:
+                url += "&HITLIST_SIZE=10"  # 默认值
+
+            logger.info(f"生成的BLAST URL: {url}")
             
             # 发起PUT请求
             api_response = call_api(url)
@@ -196,7 +211,7 @@ IMPORTANT: only return the BLAST API URL,put it in the [], no other text.
         get_url = f"https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?CMD=Get&FORMAT_TYPE=Text&RID={rid}"
         
         # 等待一段时间后再获取结果
-        waiting_time = min(30 * (attempt + 1), 60)  # 随着尝试次数增加等待时间，最长60秒
+        waiting_time = min(15 * (attempt + 1), 60)  # 随着尝试次数增加等待时间，最长60秒
         logger.info(f"等待 {waiting_time} 秒后获取结果...")
         time.sleep(waiting_time)
         
