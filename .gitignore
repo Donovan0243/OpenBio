@@ -3,6 +3,10 @@
 .AppleDouble
 .LSOverride
 .cursor
+data/
+results/
+pre*/
+
 Icon
 ._*
 
