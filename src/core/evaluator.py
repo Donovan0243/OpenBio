@@ -1,5 +1,5 @@
 from langchain_ollama import ChatOllama
-from langchain_core.messages import SystemMessage, AIMessage,HumanMessage
+from langchain_core.messages import SystemMessage, AIMessage,HumanMessage, ToolMessage
 import logging
 from typing import Dict, Any
 from textwrap import dedent
@@ -64,7 +64,17 @@ You should may a decision that whether the conversation history can answer the q
         system_message = [msg for msg in messages if isinstance(msg, SystemMessage) and msg.additional_kwargs.get("type") == "system_prompt"]
 
         # 获取相关历史消息
-        agent_history = [msg for msg in messages if isinstance(msg, AIMessage) and msg.additional_kwargs.get("type") in ["blast_progress", "blast_response","eutils_progress", "eutils_response"]]
+        agent_history = [
+            msg for msg in messages
+            if (
+                (isinstance(msg, AIMessage) and msg.additional_kwargs.get("type") in [
+                    "blast_progress", "blast_response",
+                    "eutils_progress", "eutils_response",
+                    "search_response"
+                ])
+                or isinstance(msg, ToolMessage)
+            )
+        ]
 
         # 格式化历史记录为文本
         history_text = ""

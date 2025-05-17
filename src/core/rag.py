@@ -9,6 +9,7 @@ from .evaluator import Evaluator
 from .generator import Generator
 from ..agents.eutils_agent.graph import create_eutils_subgraph
 from ..agents.blast_agent.graph import create_blast_subgraph
+from ..agents.search_agent.graph import create_search_subgraph
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -31,6 +32,7 @@ def initialize_rag_system():
     workflow.add_node("generator", generator.generate)
     workflow.add_node("eutils_agent", create_eutils_subgraph())
     workflow.add_node("blast_agent", create_blast_subgraph())
+    workflow.add_node("search_agent", create_search_subgraph())  # 添加搜索代理
     
     # 添加边
     workflow.add_edge(START, "router")  # 从START到router
@@ -42,11 +44,12 @@ def initialize_rag_system():
         {
             "eutils_agent": "eutils_agent",
             "blast_agent": "blast_agent",
+            "search_agent": "search_agent",  # 添加搜索代理的边
         }
     )
     
     # Agent 的条件路由
-    for agent in ["eutils_agent", "blast_agent"]:
+    for agent in ["eutils_agent", "blast_agent", "search_agent"]:  # 添加search_agent
         workflow.add_conditional_edges(
             agent,
             lambda x: END if x.get("status") == "error" else "evaluator",

@@ -1,5 +1,5 @@
 from langchain_ollama import ChatOllama
-from langchain_core.messages import SystemMessage,HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage,HumanMessage, AIMessage, ToolMessage
 import logging
 from typing import Dict, Any
 
@@ -23,7 +23,10 @@ class Generator:
         # 获取所有用户消息
         user_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
 
-        agent_messages = [msg for msg in messages if isinstance(msg, AIMessage)]
+        agent_messages = [
+            msg for msg in messages
+            if isinstance(msg, (AIMessage, ToolMessage))
+        ]
         
         if not user_messages:
             return {
@@ -59,7 +62,7 @@ You are a bioinformatician. Based on the above conversation history and research
 Please adhere to the following requirements:
 1. The answer should be direct and clear
 2. Don't add unnecessary foreshadowing
-3. Use the information gathered from the tools (E-utils, BLAST, etc.) to provide an accurate response
+3. Use the information gathered from the tools (E-utils, BLAST, Web search etc.) to provide an accurate response
 4. If the information is insufficient, acknowledge the limitations
 
 Please generate your final answer now.
@@ -73,7 +76,10 @@ Please generate your final answer now.
         # 返回生成的答案
         return {
             "messages": messages + [
-                AIMessage(content=response.content)
+                AIMessage(
+                    content=response.content,
+                    additional_kwargs={"type": "final_answer"}
+                )
             ],
             "metadata": metadata
         }

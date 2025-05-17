@@ -26,7 +26,7 @@ class Router:
         agent_history = [
             msg for msg in messages
             if isinstance(msg, AIMessage) and
-            (msg.additional_kwargs.get("type") in ["eutils_response", "eutils_progress", "blast_response", "blast_progress"])
+            (msg.additional_kwargs.get("type") in ["eutils_response", "eutils_progress", "blast_response", "blast_progress", "search_response"])
         ]
         
         if not user_question:
@@ -50,12 +50,14 @@ class Router:
         eval_reason = eval_result.get("reason", "No evaluation reason provided")
         
         # 构建单一提示
-        combined_prompt = f"""
 
+        combined_prompt = f"""
 You are a strict router that uses JSON to make routing decisions. You should analyze the conversation history above to make an informed decision about which agent to use.
 router options:
    - eutils_agent: query the database to get the detail information about gene, protein, disease.
    - blast_agent: check the DNA sequence alignment and comparison.
+   - search_agent: search the web when the question cannot be answered by eutils or blast.
+
                                      
 You should consider the following:
    - What is the question?
@@ -76,7 +78,7 @@ PREVIOUS EVALUATOR'S OPINION:
 
 You MUST output your decision in the following JSON format:
 {{
-    "agent": "eutils_agent" or "blast_agent",
+    "agent": "eutils_agent" or "blast_agent" or "search_agent",
     "reason": "Brief explanation of why this agent was chosen for the next step"
 }}
                                      
@@ -100,7 +102,7 @@ Do not include any other text or formatting. ONLY return the JSON object.
                     agent = response_json["agent"]
                     reason = response_json["reason"]
                     
-                    if agent in ["eutils_agent", "blast_agent"]:
+                    if agent in ["eutils_agent", "blast_agent", "search_agent"]:
                         # 记录路由决策和原因
                         logger.info(f"路由决策: {agent}, 原因: {reason}")
                         return {
