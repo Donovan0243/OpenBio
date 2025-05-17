@@ -45,6 +45,7 @@ def initialize_rag_system():
             "eutils_agent": "eutils_agent",
             "blast_agent": "blast_agent",
             "search_agent": "search_agent",  # 添加搜索代理的边
+            "irrelevant_questions": "generator",
         }
     )
     

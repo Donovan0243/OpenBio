@@ -57,6 +57,7 @@ router options:
    - eutils_agent: query the database to get the detail information about gene, protein, disease.
    - blast_agent: check the DNA sequence alignment and comparison.
    - search_agent: search the web when the question cannot be answered by eutils or blast.
+   - irrelevant_questions: the question is not related to bioinformatics.
 
                                      
 You should consider the following:
@@ -78,7 +79,7 @@ PREVIOUS EVALUATOR'S OPINION:
 
 You MUST output your decision in the following JSON format:
 {{
-    "agent": "eutils_agent" or "blast_agent" or "search_agent",
+    "agent": "eutils_agent" or "blast_agent" or "search_agent" or "irrelevant_questions",
     "reason": "Brief explanation of why this agent was chosen for the next step"
 }}
                                      
@@ -102,14 +103,14 @@ Do not include any other text or formatting. ONLY return the JSON object.
                     agent = response_json["agent"]
                     reason = response_json["reason"]
                     
-                    if agent in ["eutils_agent", "blast_agent", "search_agent"]:
+                    if agent in ["eutils_agent", "blast_agent", "search_agent","irrelevant_questions"]:
                         # 记录路由决策和原因
                         logger.info(f"路由决策: {agent}, 原因: {reason}")
                         return {
                             "next": agent,
                             "metadata": {
                                 **metadata,
-                                "routing_reason": reason
+                                "routing_reason": "IRRELEVANT REQUEST." if agent == "irrelevant_questions" else reason
                             }
                         }
                     else:

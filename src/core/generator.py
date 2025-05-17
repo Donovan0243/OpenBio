@@ -19,6 +19,29 @@ class Generator:
         # 保留metadata
         metadata = state.get("metadata", {})
         messages = state["messages"]
+        
+        # 检查是否是非生物信息相关的请求
+        if metadata.get("routing_reason") == "IRRELEVANT REQUEST.":
+            irrelevant_prompt = """
+You are a strict bio-information assistant. The user has asked a question that is not related to bioinformatics.
+Please generate a polite response that:
+1. Explains you are a bio-information assistant
+2. Clarifies the types of questions you can answer (genes, proteins, diseases, sequences, etc.)
+3. Politely declines to answer the current question
+4. Keep the response concise and professional
+"""
+            response = self.llm.invoke([SystemMessage(content=irrelevant_prompt)])
+            
+            return {
+                "messages": messages + [
+                    AIMessage(
+                        content=response.content,
+                        additional_kwargs={"type": "final_answer"}
+                    )
+                ],
+                "next": "END",
+                "metadata": metadata
+            }
 
         # 获取所有用户消息
         user_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
