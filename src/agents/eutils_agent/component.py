@@ -6,8 +6,8 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage,SystemMessage
 from ...tools.call_api import call_api
 # 设置日志
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 class EutilsComponent:
     def __init__(self):
@@ -74,7 +74,10 @@ class EutilsComponent:
             return {
                 "status": "error",
                 "error": "No user question found",
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "thinking_content": "No user question found"
+                }
             }
         
         # 获取第一条用户问题
@@ -158,7 +161,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "eutils_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Duplicate parameters detected (same database and term)."
+                    }
                 }
             
             # 验证必要的参数是否存在
@@ -185,7 +191,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "eutils_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "E-utilities esearch API调用失败"
+                    }
                 }
             
             # 处理结果
@@ -210,7 +219,8 @@ IMPORTANT:
                 "next": "fetch_details",
                 "metadata": {
                     **metadata,
-                    "used_eutils_params": used_params  # 更新使用过的参数列表
+                    "used_eutils_params": used_params,  # 更新使用过的参数列表
+                    "thinking_content": f"E-utilities esearch results fetched:{api_response}.\n\n by calling {url}"
                 }
             }
             
@@ -219,7 +229,10 @@ IMPORTANT:
             return {
                 "status": "error",
                 "error": f"E-utilities esearch error: {str(e)}",
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "thinking_content": f"E-utilities esearch error: {str(e)}"
+                }
             }
     
     def fetch_details(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -243,7 +256,10 @@ IMPORTANT:
             return {
                 "status": "error",
                 "error": "No user question found",
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "thinking_content": "No user question found"
+                }
             }
 
         # 获取第一条用户问题
@@ -321,7 +337,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "eutils_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Duplicate parameters detected (same database and IDs)."
+                    }
                 }
             
             # 验证必要的参数是否存在
@@ -346,7 +365,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "eutils_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "E-utilities API call failed"
+                    }
                 }
             
             # 处理结果
@@ -370,8 +392,9 @@ IMPORTANT:
                 ],
                 "metadata": {
                     **metadata,
-                    "used_eutils_params": used_params  # 需要更新metadata
-                }
+                    "used_eutils_params": used_params,  # 需要更新metadata
+                    "thinking_content": f"E-utilities details: {api_response}"
+                },
             }
             
         except Exception as e:
@@ -379,7 +402,8 @@ IMPORTANT:
             return {
                 "status": "error",
                 "error": f"E-utilities fetch error: {str(e)}",
-                "metadata": metadata
+                "metadata": metadata,
+                "thinking_content": f"E-utilities fetch过程中出错: {str(e)}"
             }
 
     def format_eutils_history(self, eutils_history: List[AIMessage]) -> str:

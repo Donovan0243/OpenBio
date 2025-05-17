@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 class Generator:
     def __init__(self):
@@ -40,7 +41,8 @@ Please generate a polite response that:
                     )
                 ],
                 "next": "END",
-                "metadata": metadata
+                "metadata": metadata,
+                "thinking_content": "User question is not related to bioinformatics, generate a polite response to decline."
             }
 
         # 获取所有用户消息
@@ -55,7 +57,8 @@ Please generate a polite response that:
             return {
                 "status": "error",
                 "error": "No user question found",
-                "metadata": metadata
+                "metadata": metadata,
+                "thinking_content": "No user question found"
             }
         
         # 获取第一条用户问题
@@ -104,5 +107,8 @@ Please generate your final answer now.
                     additional_kwargs={"type": "final_answer"}
                 )
             ],
-            "metadata": metadata
+            "metadata": {
+                **metadata,
+                "thinking_content": f"Generate final answer."
+            }
         }

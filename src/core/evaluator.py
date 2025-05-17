@@ -7,6 +7,7 @@ import json
 import re
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 class Evaluator:
     def __init__(self):
@@ -43,7 +44,10 @@ You should may a decision that whether the conversation history can answer the q
             logger.info(f"已达到评估轮数上限 ({eval_count}/5)，强制进入生成阶段")
             return {
                 "next": "generate",
-                "metadata": state["metadata"]
+                "metadata": {
+                    **state["metadata"],
+                    "thinking_content": "Evaluation count limit reached, force to generate"
+                }
             }
 
         messages = state["messages"]
@@ -54,7 +58,10 @@ You should may a decision that whether the conversation history can answer the q
             return {
                 "status": "error",
                 "error": "No user question found",
-                "metadata": state["metadata"]
+                "metadata": {
+                    **state["metadata"],
+                    "thinking_content": "No user question found"
+                }
             }
         
         # 获取第一条用户问题
@@ -132,7 +139,8 @@ Please return your decision as a JSON object.
                         "next": "router",
                         "metadata": {
                             **state["metadata"],
-                            "eval_error": "Invalid JSON response from evaluator"
+                            "eval_error": "Invalid JSON response from evaluator",
+                            "thinking_content": "Invalid JSON response from evaluator"
                         }
                     }
                 eval_result = json.loads(json_match.group(1))
@@ -145,7 +153,8 @@ Please return your decision as a JSON object.
                     "next": "router",
                     "metadata": {
                         **state["metadata"],
-                        "eval_result": eval_result
+                        "eval_result": eval_result,
+                        "thinking_content": f"Information is insufficient, return router to continue querying.{eval_result['reason']}"
                     }
                 }
             elif eval_result["next_step"] == "GENERATE":
@@ -154,7 +163,8 @@ Please return your decision as a JSON object.
                     "next": "generate",
                     "metadata": {
                         **state["metadata"],
-                        "eval_result": eval_result
+                        "eval_result": eval_result,
+                        "thinking_content": f"Information is sufficient, enter generate stage.{eval_result['reason']}"
                     }
                 }
             else:
@@ -163,7 +173,8 @@ Please return your decision as a JSON object.
                     "next": "router",
                     "metadata": {
                         **state["metadata"],
-                        "eval_error": "Invalid decision from evaluator"
+                        "eval_error": "Invalid decision from evaluator",
+                        "thinking_content": "Invalid decision from evaluator, return router to continue querying"
                     }
                 }
             
@@ -173,6 +184,7 @@ Please return your decision as a JSON object.
                 "next": "router",
                 "metadata": {
                     **state["metadata"],
-                    "eval_error": f"Evaluation error: {str(e)}"
+                    "eval_error": f"Evaluation error: {str(e)}",
+                    "thinking_content": f"Evaluation error: {str(e)}"
                 }
             }

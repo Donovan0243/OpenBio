@@ -4,6 +4,7 @@ import time
 import logging
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 def call_api(url, max_retries=3):
 	# 设置最大重试次数，避免无限重试

@@ -3,6 +3,7 @@ import logging
 import json
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 class Router:
     def __init__(self):
@@ -32,8 +33,11 @@ class Router:
         if not user_question:
             return {
                 "status": "error",
-                "error": "没有找到用户问题",
-                "metadata": metadata
+                "error": "No user question found",
+                "metadata": {
+                    **metadata,
+                    "thinking_content": "No user question found"
+                }
             }
         
         # 提取用户问题文本
@@ -110,7 +114,8 @@ Do not include any other text or formatting. ONLY return the JSON object.
                             "next": agent,
                             "metadata": {
                                 **metadata,
-                                "routing_reason": "IRRELEVANT REQUEST." if agent == "irrelevant_questions" else reason
+                                "routing_reason": "IRRELEVANT REQUEST." if agent == "irrelevant_questions" else reason,
+                                "thinking_content": f"{agent} was chosen for the next step. Reason: {reason}"
                             }
                         }
                     else:
@@ -126,6 +131,10 @@ Do not include any other text or formatting. ONLY return the JSON object.
         logger.warning("多次尝试失败，默认使用 eutils")
         return {
             "next": "eutils_agent",
-            "metadata": metadata
+            "metadata": {
+                **metadata,
+                "thinking_content": "Failed to route, default to eutils"
+            }
         }
+        
     

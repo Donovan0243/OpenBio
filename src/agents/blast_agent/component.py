@@ -7,8 +7,8 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_ollama import ChatOllama
 from ...tools.call_api import call_api
 # 设置日志
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 class BlastComponent:
     def __init__(self):
@@ -53,7 +53,8 @@ class BlastComponent:
             return {
                 "status": "error",
                 "error": "No user question found",
-                "metadata": metadata
+                "metadata": metadata,
+                "thinking_content": "没有找到用户问题"
             }
         
         # 获取第一条用户问题
@@ -119,7 +120,10 @@ IMPORTANT:
                                     additional_kwargs={"type": "blast_error"})
                         ],
                         "status": "error",
-                        "metadata": metadata
+                        "metadata": {
+                            **metadata,
+                            "thinking_content": "Cannot extract valid JSON from LLM response"
+                        }
                     }
                 params = json.loads(json_match.group(1))
 
@@ -132,7 +136,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Duplicate sequence detected"
+                    }
                 }
 
             # 验证必要的参数是否存在
@@ -144,7 +151,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Missing required sequence parameter"
+                    }
                 }
 
             # 构建BLAST URL
@@ -166,7 +176,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "BLAST Put request failed"
+                    }
                 }
             
             # 提取RID
@@ -179,7 +192,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Could not extract RID from BLAST response"
+                    }
                 }
                 
             rid = rid_match.group(1)
@@ -203,7 +219,8 @@ IMPORTANT:
                     **metadata,
                     "blast_rid": rid,
                     "attempt": 0,
-                    "used_blast_params": used_params  # 更新使用过的参数列表
+                    "used_blast_params": used_params,  # 更新使用过的参数列表
+                    "thinking_content": f"Initialize BLAST query: {url}, RID: {rid}"
                 }
             }
             
@@ -215,7 +232,10 @@ IMPORTANT:
                             additional_kwargs={"type": "blast_error"})
                 ],
                 "status": "error",
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "thinking_content": f"Error initializing BLAST query: {str(e)}"
+                }
             }
     
     def fetch_blast_results(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -233,7 +253,10 @@ IMPORTANT:
                             additional_kwargs={"type": "blast_error"})
                 ],
                 "status": "error",
-                "metadata": metadata
+                "metadata": {
+                    **metadata,
+                    "thinking_content": "No RID found for BLAST query"
+                }
             }
         
         # 获取当前尝试次数
@@ -261,7 +284,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_progress"})
                     ],
                     "next": "fetch_results",  # 再次尝试获取结果
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": f"Waiting for BLAST results (attempt {attempt+1}/3)..."
+                    }
                 }
             else:
                 return {
@@ -270,7 +296,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "Failed to retrieve BLAST results after multiple attempts"
+                    }
                 }
         
         # 检查是否仍在运行
@@ -283,7 +312,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_progress"})
                     ],
                     "next": "fetch_results",  # 再次尝试获取结果
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": f"BLAST analysis still running (attempt {attempt+1}/3)..."
+                    }
                 }
             else:
                 return {
@@ -292,7 +324,10 @@ IMPORTANT:
                                 additional_kwargs={"type": "blast_error"})
                     ],
                     "status": "error",
-                    "metadata": metadata
+                    "metadata": {
+                        **metadata,
+                        "thinking_content": "BLAST analysis is taking too long, please try again later"
+                    }
                 }
         
         # 裁剪过长的结果
@@ -312,5 +347,8 @@ IMPORTANT:
                 )
             ],
             # 不再指向analyze_results
-            "metadata": metadata
+            "metadata": {
+                **metadata,
+                "thinking_content": f"BLAST results fetched"
+            }
         }
