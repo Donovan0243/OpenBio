@@ -29,8 +29,8 @@ def main():
     workflow = initialize_rag_system()
     
     # 指定输入和输出文件
-    input_file = "data/geneturing.json"
-    output_file = "results/geneturing_result.json"
+    input_file = "data/genehop.json"
+    output_file = "results/genehop_small_result.json"
     
     # 加载嵌套结构
     qas = load_questions(input_file)

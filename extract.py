@@ -46,8 +46,8 @@ def main():
 def main():
     # 处理所有结果文件
     result_files = [
-        "results/genehop_result.json",
-        "results/geneturing_result.json",
+        "results/genehop_small_result.json",
+        # "results/geneturing_small_result.json",
     ]
     
     for file in result_files:

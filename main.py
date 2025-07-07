@@ -11,19 +11,26 @@ def main():
     # system_prompt = get_prompt_header([1, 1, 1, 1, 1, 1])
     # 准备问题列表
     questions = [
-        # "What is the official gene symbol of SNAT6?", #SLC38A6
-        # "What are genes related to Distal renal tubular acidosis?", #SLC4A1, ATP6V0A4
-        # "Which chromosome is TTTY7 gene located on human genome?", #chrY
-        # "Align the DNA sequence to the human genome:GGACAGCTGAGATCACATCAAGGATTCCAGAAAGAATTGGCACAGGATCATTCAAGATGCATCTCTCCGTTGCCCCTGTTCCTGGCTTTCCTTCAACTTCCTCAAAGGGGACATCATTTCGGAGTTTGGCTTCCA", #chr8:7081648-7081782
-        # "Which organism does the DNA sequence come from:CGTACACCATTGGTGCCAGTGACTGTGGTCAATTCGGTAGAAGTAGAGGTAAAAGTGCTGTTCCATGGCTCAGTTGTAGTTATGATGGTGCTAGCAGTTGTTGGAGTTCTGATGACAATGACGGTTTCGTCAGTTG", #yeast
-        # "Convert ENSG00000205403 to official gene/ symbol.", #CFI
-        # "Is LOC124907753 a protein-coding gene?", #N/A
-        # "Which gene is SNP rs1241371358 associated with?", #LRRC23
-        # "Which chromosome does SNP rs545148486 locate on human genome?", #chr16
-        # "What is the function of the gene associated with SNP rs1241371358? Let's decompose the question to sub-questions and solve them step by step.", # Predicted to be active in cytosol.
-        # "List chromosome locations of the genes related to Hemolytic anemia due to phosphofructokinase deficiency. Let's decompose the question to sub-questions and solve them step by step.", #"21q22.3"
-        "What are the aliases of the gene that contains this sequnece:ATTGTGAGAGTAACCAACGTGGGGTTACGGGGGAGAATCTGGAGAGAAGAGAAGAGGTTAACAACCCTCCCACTTCCTGGCCACCCCCCTCCACCTTTTCTGGTAAGGAGCCC. Let's decompose the question to sub-questions and solve them step by step."
+        # GeneTuring examples
+        # "What is the official gene symbol of SNAT6?"  #SLC38A6
+        # "What are genes related to Distal renal tubular acidosis?"  #SLC4A1, ATP6V0A4
+        # "Which chromosome is TTTY7 gene located on human genome?"  #chrY
+        # "Align the DNA sequence to the human genome:GGACAGCTGAGATCACATCAAGGATTCCAGAAAGAATTGGCACAGGATCATTCAAGATGCATCTCTCCGTTGCCCCTGTTCCTGGCTTTCCTTCAACTTCCTCAAAGGGGACATCATTTCGGAGTTTGGCTTCCA"  #chr8:7081648-7081782
+        # "Which organism does the DNA sequence come from:CGTACACCATTGGTGCCAGTGACTGTGGTCAATTCGGTAGAAGTAGAGGTAAAAGTGCTGTTCCATGGCTCAGTTGTAGTTATGATGGTGCTAGCAGTTGTTGGAGTTCTGATGACAATGACGGTTTCGTCAGTTG"  #yeast
+        # "Convert ENSG00000205403 to official gene/ symbol."  #CFI
+        # "Is LOC124907753 a protein-coding gene?"  #N/A
+        # "Which gene is SNP rs1241371358 associated with?"  #LRRC23
+        # "Which chromosome does SNP rs545148486 locate on human genome?"  #chr16
+
+        # GeneHop examples
+        # "What is the function of the gene associated with SNP rs1241371358? Let's decompose the question to sub-questions and solve them step by step."  # Predicted to be active in cytosol.
+        # "List chromosome locations of the genes related to Hemolytic anemia due to phosphofructokinase deficiency. Let's decompose the question to sub-questions and solve them step by step."  #"21q22.3"
+        # "What are the aliases of the gene that contains this sequnece:ATTGTGAGAGTAACCAACGTGGGGTTACGGGGGAGAATCTGGAGAGAAGAGAAGAGGTTAACAACCCTCCCACTTCCTGGCCACCCCCCTCCACCTTTTCTGGTAAGGAGCCC. Let's decompose the question to sub-questions and solve them step by step."
+       
+        # "NBA playoff schedule" # example to show irrelevant questions
+        "Which signaling pathways is TP53 involved in?" # example to show search agent
     ]
+
     # 逐个处理问题
     for question in questions:
         print("\n" + "="*50)

@@ -357,8 +357,8 @@ def evaluate_results(input_file: str):
 def main():
     # 处理所有结果文件
     result_files = [
-        "results/genehop_result_extracted.json",
-        "results/geneturing_result_extracted.json"
+        "results/genehop_small_result_extracted.json",
+        # "results/geneturing_small_result_extracted.json"
     ]
     
     for file in result_files:
